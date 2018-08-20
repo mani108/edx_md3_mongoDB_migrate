@@ -3,37 +3,40 @@ const async = require('async');
 
 const customers = require('./data/m3-customer-data.json');
 const customerAddress = require('./data/m3-customer-address-data.json');
-
+console.log('Task Begins');
 let tasks = [];
 
-tasks.push(function(Callback){
-    let documents = [];
-    console.log(`Processing Records :`);
-    for(j=0;j<Object.keys(customers).length;j++){
-        let document = {};
-        Object.assign(document, customers[j], customerAddress[j]);
-        documents.push(document);
-    }
-    writeToDb(documents, Callback);
-});
+const limit = parseInt(process.argv[2],10) || 1000
+//let url = "mongodb://localhost:27017/edx-course-db"
+let url = "mongodb://localhost:27017/edx-course-db";
+//mongodb.MongoClient(url,{useNewUrlParser: true},(error, client)=>{
+mongodb.MongoClient.connect(url,{useNewUrlParser:true}, (error,client)=>{
+    if(error) return console.log(error);
+    let db = client.db('edx-course-db');
+   
+    customers.forEach((customer, index, list) => {
+        customers[index] = Object.assign(customer, customerAddress[index]);
+        if(index % limit == 0){
+            const start = index;
+            const end = (start+limit > customers.length) ? customers.length-1 : start+limit;
+            tasks.push((done)=>{
+                console.log(`Processing ${start}-${end} out of ${customers.length}`)
+                db.collection('customers_1').insert(customers.slice(start,end),(error,results) =>{
+                    done(error, results);
+                });
+            });
+            console.log()
+        }
+    })
+    console.log(`${tasks.length} parallel task(s)`);
+    const startTime = Date.now();
+    async.parallel(tasks,(error,results) => {
+        if(error) console.error(error);
 
-const writeToDb = function(docs, cb){
-    let url = "mongodb://localhost:27017/edx-course-db";
-    mongodb.MongoClient.connect(url,{useNewUrlParser:true}, (err,client)=>{
-        if(err)
-        cb(err, null);
+        const endTime = Date.now();
+        console.log(`Execution Time: ${endTime-startTime}`);
 
-        let db = client.db('edx-course-db');
-        db.collection('customers').insert(docs, function(err,res){
-            client.close();
-            if(err){
-                cb(err, null);
-            }
-            console.log(`Processed Records`);
-        });
+        client.close();
     });
-}
-
-async.parallel(tasks, function(err, res){
-    console.log(res);
 });
+console.log('Task Ends');
